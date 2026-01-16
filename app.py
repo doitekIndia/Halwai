@@ -113,7 +113,7 @@ if not st.session_state.admin_logged_in and not st.session_state.company_logged_
         st.markdown("### Company")
         company_list = list(COMPANY_INFO.keys())
         selected_company = st.selectbox("Company", company_list)
-        password = st.text_input("Password", type="password", placeholder="Password")
+        password = st.text_input("Password", type="password", placeholder="company_password")
         if st.button("🏢 Company Login", type="primary"):
             if password == "company123":
                 st.session_state.company_logged_in = selected_company
@@ -266,5 +266,6 @@ else:
 
 st.markdown("---")
 st.markdown("<p style='text-align: center; color: #666;'>© 2026 CREATED BY: NITIN KHATRI - Bikaner</p>", unsafe_allow_html=True)
+
 
 
