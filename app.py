@@ -1,8 +1,9 @@
 import streamlit as st
 import pandas as pd
 import os
-from datetime import date, timedelta
 import json
+import io
+from datetime import date, timedelta
 
 st.set_page_config(page_title="👑 रामलाल हलवाई कैटरिंग", layout="wide")
 
@@ -15,49 +16,68 @@ st.markdown("""
 .company-card {background: linear-gradient(145deg, #10b981, #34d399); border-radius: 10px; padding: 1rem; margin: 0.5rem 0;}
 .expired {background: linear-gradient(145deg, #ef4444, #dc2626) !important; animation: pulse 2s infinite;}
 @keyframes pulse {0% {opacity: 1;} 50% {opacity: 0.7;} 100% {opacity: 1;}}
+.bom-upload {background: linear-gradient(145deg, #8b5cf6, #a78bfa); border: 2px solid #7c3aed;}
 </style>
 """, unsafe_allow_html=True)
 
-# ===================== COMPANY SPECIFIC BOM =====================
-COMPANY_BOM = {
-    "ramlal_halwai": {
-        "name": "रामलाल हलवाई कैटरिंग एंटरप्राइजेज",
-        "owners": "श्री सुरेश चौधरी जी | सुनीता चौधरी जी",
-        "contact": "9928406444 | 9782266444 | 9414736444",
-        "dishes": {
-            "पनीर टिक्का": {"पनीर": 12, "दही": 6},
-            "शाही पनीर": {"पनीर": 10, "टमाटर": 8},
-            "दाल मखनी": {"साबुत उड़द": 6, "मक्खन": 2},
-            "जीरा राइस": {"बासमती चावल": 8},
-            "बटर नान": {"मैदा": 10}
-        }
-    },
-    "bhanwarlal_halwai": {
-        "name": "भंवरलाल कैटरिंग सर्विसेज",
-        "owners": "श्री भंवरलाल जी | सीमा देवी जी",
-        "contact": "9414141414 | 9784141414 | 9928141414",
-        "dishes": {
-            "पनीर लबाबदार": {"पनीर": 11, "क्रीम": 4},
-            "मलाई कोफ्ता": {"कोफ्ता": 8, "मलाई": 5},
-            "प्लेन राइस": {"चावल": 9},
-            "लच्छा पराठा": {"मैदा": 12}
-        }
-    },
-    "motilal_sweet": {
-        "name": "मोतिलाल स्वीट्स एंड कैटरर्स",
-        "owners": "श्री मोतीलाल जी | राधा देवी जी",
-        "contact": "9829242424 | 9784242424 | 9414242424",
-        "dishes": {
-            "गुलाब जामुन": {"खोया": 6},
-            "रस मलाई": {"चैना": 7, "दूध": 10},
-            "मालपुआ": {"मैदा": 6, "चीनी": 8},
-            "पनीर टिक्का": {"पनीर": 12, "दही": 6}
-        }
-    }
+# ===================== ENTERPRISE BOM TEMPLATE =====================
+BASE_PEOPLE = 100
+
+BOM_TEMPLATE = {
+    # ====== स्टार्टर्स ======
+    "पनीर टिक्का": [
+        {"item": "पनीर", "qty": 12, "unit": "किलो"},
+        {"item": "दही", "qty": 6, "unit": "किलो"},
+        {"item": "मसाले", "qty": 1, "unit": "किलो"},
+        {"item": "तेल", "qty": 2, "unit": "लीटर"},
+    ],
+    "शाही पनीर": [
+        {"item": "पनीर", "qty": 10, "unit": "किलो"},
+        {"item": "टमाटर", "qty": 8, "unit": "किलो"},
+        {"item": "काजू", "qty": 2, "unit": "किलो"},
+        {"item": "क्रीम", "qty": 3, "unit": "लीटर"},
+    ],
+    "दाल मखनी": [
+        {"item": "साबुत उड़द", "qty": 6, "unit": "किलो"},
+        {"item": "राजमा", "qty": 2, "unit": "किलो"},
+        {"item": "मक्खन", "qty": 2, "unit": "किलो"},
+    ],
+    "जीरा राइस": [
+        {"item": "बासमती चावल", "qty": 8, "unit": "किलो"},
+        {"item": "घी", "qty": 1, "unit": "किलो"},
+    ],
+    "बटर नान": [
+        {"item": "मैदा", "qty": 10, "unit": "किलो"},
+        {"item": "मक्खन", "qty": 2, "unit": "किलो"},
+    ],
+    "गुलाब जामुन": [
+        {"item": "खोया", "qty": 6, "unit": "किलो"},
+        {"item": "चीनी", "qty": 5, "unit": "किलो"},
+    ]
 }
 
-# ===================== FIXED DATA LOADING - NO CACHE =====================
-def load_data():
+# ===================== COMPANY SPECIFIC BOM STORAGE =====================
+def load_company_bom(company_id):
+    os.makedirs("data/bom", exist_ok=True)
+    bom_file = f"data/bom/{company_id}.json"
+    if os.path.exists(bom_file):
+        with open(bom_file, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    return BOM_TEMPLATE.copy()
+
+def save_company_bom(company_id, bom_data):
+    os.makedirs("data/bom", exist_ok=True)
+    bom_file = f"data/bom/{company_id}.json"
+    with open(bom_file, 'w', encoding='utf-8') as f:
+        json.dump(bom_data, f, ensure_ascii=False, indent=2)
+
+def download_bom_template(company_id):
+    template = BOM_TEMPLATE.copy()
+    json_str = json.dumps(template, ensure_ascii=False, indent=2)
+    return json_str.encode('utf-8')
+
+# ===================== DATA FILES =====================
+def load_subscriptions():
     os.makedirs("data", exist_ok=True)
     SUB_FILE = "data/subscriptions.json"
     if not os.path.exists(SUB_FILE):
@@ -72,12 +92,30 @@ def load_data():
     with open(SUB_FILE, 'r') as f:
         return json.load(f)
 
-def save_data(data):
+def save_subscriptions(data):
     with open("data/subscriptions.json", 'w') as f:
         json.dump(data, f)
 
-# Load fresh data every time
-subscriptions = load_data()
+subscriptions = load_subscriptions()
+
+# ===================== COMPANY INFO =====================
+COMPANY_BOM = {
+    "ramlal_halwai": {
+        "name": "रामलाल हलवाई कैटरिंग एंटरप्राइजेज",
+        "owners": "श्री सुरेश चौधरी जी | सुनीता चौधरी जी",
+        "contact": "9928406444 | 9782266444 | 9414736444",
+    },
+    "bhanwarlal_halwai": {
+        "name": "भंवरलाल कैटरिंग सर्विसेज",
+        "owners": "श्री भंवरलाल जी | सीमा देवी जी",
+        "contact": "9414141414 | 9784141414 | 9928141414",
+    },
+    "motilal_sweet": {
+        "name": "मोतिलाल स्वीट्स एंड कैटरर्स",
+        "owners": "श्री मोतीलाल जी | राधा देवी जी",
+        "contact": "9829242424 | 9784242424 | 9414242424",
+    }
+}
 
 # Session state
 if "admin_logged_in" not in st.session_state:
@@ -93,8 +131,6 @@ if not st.session_state.admin_logged_in and not st.session_state.company_logged_
     
     with admin_tab:
         st.markdown("<div class='admin-panel'>", unsafe_allow_html=True)
-        st.markdown("### 🔥 **Admin: admin / admin123**")
-        
         col1, col2 = st.columns(2)
         with col1:
             admin_user = st.text_input("Username", placeholder="admin")
@@ -110,11 +146,9 @@ if not st.session_state.admin_logged_in and not st.session_state.company_logged_
         st.markdown("</div>", unsafe_allow_html=True)
     
     with company_tab:
-        st.markdown("### 🔥 **Company: company123**")
-        
         col1, col2 = st.columns(2)
         with col1:
-            company_list = ["ramlal_halwai", "bhanwarlal_halwai", "motilal_sweet"]
+            company_list = list(COMPANY_BOM.keys())
             selected_company = st.selectbox("🏢 Company", company_list, index=0)
             status = "✅ Active" if subscriptions[selected_company]["active"] and date.fromisoformat(subscriptions[selected_company]["expiry"]) > date.today() else "❌ Expired"
             st.info(f"**Status:** {status}")
@@ -128,7 +162,7 @@ if not st.session_state.admin_logged_in and not st.session_state.company_logged_
             else:
                 st.error("❌ company123")
 
-# ===================== ADMIN DASHBOARD - FIXED RENEWAL =====================
+# ===================== ADMIN DASHBOARD =====================
 elif st.session_state.admin_logged_in:
     st.markdown(f"""
     <div class='enterprise-card'>
@@ -136,10 +170,9 @@ elif st.session_state.admin_logged_in:
     </div>
     """, unsafe_allow_html=True)
     
-    tab1, tab2 = st.tabs(["💳 Subscriptions", "🔐 Manage"])
+    tab1, tab2, tab3 = st.tabs(["💳 Subscriptions", "📦 BOM Management", "🔐 Manage"])
     
     with tab1:
-        # ✅ FRESH DATAFRAME - Updates instantly after renewal
         sub_df = pd.DataFrame([
             {
                 "Company": COMPANY_BOM[c]["name"],
@@ -152,48 +185,66 @@ elif st.session_state.admin_logged_in:
         ])
         st.dataframe(sub_df, use_container_width=True, hide_index=True)
         
-        # ✅ RENEWAL FORM
         col1, col2 = st.columns(2)
         with col1:
             company_to_extend = st.selectbox("🔄 Renew Company", list(subscriptions.keys()))
         with col2:
-            days = st.number_input("Days", 1, 365, 30, key="admin_days")
+            days = st.number_input("Days", 1, 365, 30)
         
         if st.button("💰 RENEW (₹5000)", type="primary", use_container_width=True):
-            old_status = "✅ Active" if subscriptions[company_to_extend]["active"] and date.fromisoformat(subscriptions[company_to_extend]["expiry"]) > date.today() else "❌ Expired"
-            
-            # Update subscription
             subscriptions[company_to_extend]["expiry"] = (date.today() + timedelta(days=days)).isoformat()
             subscriptions[company_to_extend]["active"] = True
             subscriptions[company_to_extend]["paid"] += 5000
-            save_data(subscriptions)
-            
-            new_status = "✅ Active" if subscriptions[company_to_extend]["active"] and date.fromisoformat(subscriptions[company_to_extend]["expiry"]) > date.today() else "❌ Expired"
-            
-            st.success(f"✅ **{COMPANY_BOM[company_to_extend]['name']}**")
-            st.success(f"   {old_status} → {new_status}")
-            st.success(f"   New expiry: {subscriptions[company_to_extend]['expiry']}")
-            st.balloons()
+            save_subscriptions(subscriptions)
+            st.success(f"✅ {COMPANY_BOM[company_to_extend]['name']} Renewed!")
             st.rerun()
     
     with tab2:
-        st.success("✅ **Company Password:** company123")
-        col1, col2 = st.columns(2)
+        st.markdown("### 📦 Company BOM Management")
+        company = st.selectbox("Select Company", list(COMPANY_BOM.keys()))
+        
+        col1, col2, col3 = st.columns([1, 1, 1])
         with col1:
-            if st.button("🔄 Reset All Data", type="secondary"):
-                os.remove("data/subscriptions.json") if os.path.exists("data/subscriptions.json") else None
-                st.success("✅ Reset!")
-                st.rerun()
+            st.markdown("**👇 Download Template**")
+            st.download_button(
+                "📥 Download BOM Template",
+                download_bom_template(company),
+                f"{company}_BOM_TEMPLATE.json",
+                "application/json",
+                use_container_width=True
+            )
         with col2:
-            if st.button("🔐 Logout", type="secondary"):
-                for key in ["admin_logged_in", "company_logged_in"]:
-                    st.session_state[key] = False
-                st.rerun()
+            st.markdown("**📤 Upload Updated BOM**")
+            uploaded_file = st.file_uploader("Choose JSON file", type="json", key=f"admin_bom_{company}")
+            if uploaded_file and st.button(f"💾 Save {COMPANY_BOM[company]['name']} BOM", key=f"save_bom_{company}"):
+                try:
+                    bom_data = json.load(uploaded_file)
+                    save_company_bom(company, bom_data)
+                    st.success(f"✅ {COMPANY_BOM[company]['name']} BOM Updated!")
+                except:
+                    st.error("❌ Invalid JSON format!")
+        
+        st.markdown("---")
+        st.info("**Format:** Download template → Edit in Excel/Notepad → Upload JSON")
+    
+    with tab3:
+        if st.button("🔄 Reset All Data", type="secondary"):
+            for company in COMPANY_BOM.keys():
+                save_company_bom(company, BOM_TEMPLATE.copy())
+            os.remove("data/subscriptions.json") if os.path.exists("data/subscriptions.json") else None
+            st.success("✅ Reset Complete!")
+            st.rerun()
+        
+        if st.button("🔐 Logout", type="secondary"):
+            for key in ["admin_logged_in", "company_logged_in"]:
+                st.session_state[key] = False
+            st.rerun()
 
 # ===================== COMPANY DASHBOARD =====================
 else:  # Company logged in
     company = st.session_state.company_logged_in
     company_data = COMPANY_BOM[company]
+    company_bom = load_company_bom(company)
     sub_data = subscriptions[company]
     
     is_active = sub_data["active"] and date.fromisoformat(sub_data["expiry"]) > date.today()
@@ -205,11 +256,11 @@ else:  # Company logged in
     </div>
     """, unsafe_allow_html=True)
     
+    # Status
     if is_active:
         st.markdown(f"""
         <div class='company-card'>
             <h3>✅ ACTIVE - {days_left} Days Left</h3>
-            <p>Total Paid: ₹{sub_data['paid']}</p>
         </div>
         """, unsafe_allow_html=True)
     else:
@@ -218,22 +269,13 @@ else:  # Company logged in
             <h2>❌ SUBSCRIPTION EXPIRED</h2>
         </div>
         """, unsafe_allow_html=True)
-    
-    if not is_active:
-        if st.button("🔄 RENEW NOW (₹5000/30 days)", type="primary", use_container_width=True):
-            subscriptions[company]["expiry"] = (date.today() + timedelta(days=30)).isoformat()
-            subscriptions[company]["active"] = True
-            subscriptions[company]["paid"] += 5000
-            save_data(subscriptions)
-            st.success("✅ Renewed! 🎉")
-            st.balloons()
-            st.rerun()
         st.stop()
     
-    # Bill generation
-    tab1, tab2 = st.tabs(["💰 नया बिल", "📊 बिल इतिहास"])
+    # BOM Management for Company
+    tab1, tab2, tab3 = st.tabs(["💰 नया बिल", "📦 Manage BOM", "📊 बिल इतिहास"])
     
     with tab1:
+        st.markdown("### 💰 बिल जेनरेट करें")
         with st.form("bill_form"):
             col1, col2 = st.columns([2, 1])
             with col1:
@@ -243,26 +285,28 @@ else:  # Company logged in
             
             dishes = st.multiselect(
                 "🍽️ डिशेज चुनें:",
-                list(company_data["dishes"].keys()),
-                default=list(company_data["dishes"].keys())[:2]
+                list(company_bom.keys()),
+                default=list(company_bom.keys())[:3]
             )
             submitted = st.form_submit_button("📄 बिल बनाएं", type="primary")
         
         if submitted and customer and dishes:
-            factor = people / 100
+            factor = people / BASE_PEOPLE
             bill_items = []
             for dish in dishes:
-                for item, base_qty in company_data["dishes"][dish].items():
+                for item_data in company_bom[dish]:
+                    qty = item_data["qty"] * factor
                     bill_items.append({
                         "डिश": dish,
-                        "सामग्री": item,
-                        "आवश्यक मात्रा": f"{round(base_qty * factor, 1)} किलो"
+                        "सामग्री": item_data["item"],
+                        "आवश्यक मात्रा": f"{round(qty, 1)} {item_data['unit']}"
                     })
             
             bill_df = pd.DataFrame(bill_items)
-            st.markdown("### 📋 सामग्री आवश्यकता")
+            st.markdown("### 📋 सामग्री आवश्यकता (BASE=100)")
             st.dataframe(bill_df, use_container_width=True)
             
+            # HTML Invoice
             html_content = f"""
             <!DOCTYPE html>
             <html><head><meta charset="UTF-8">
@@ -289,9 +333,37 @@ else:  # Company logged in
                 "text/html"
             )
     
+    with tab2:
+        st.markdown(f"### 📦 {company_data['name']} BOM Management")
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("**👇 Download Template**")
+            st.download_button(
+                "📥 Download My BOM Template",
+                download_bom_template(company),
+                f"{company}_BOM_TEMPLATE.json",
+                "application/json",
+                use_container_width=True
+            )
+        
+        with col2:
+            st.markdown("**📤 Upload My BOM**")
+            uploaded_file = st.file_uploader("Choose JSON file", type="json")
+            if uploaded_file and st.button("💾 Update My BOM", type="primary", use_container_width=True):
+                try:
+                    bom_data = json.load(uploaded_file)
+                    save_company_bom(company, bom_data)
+                    st.success("✅ BOM Updated Successfully!")
+                    st.rerun()
+                except:
+                    st.error("❌ Invalid JSON! Use the template format.")
+        
+        st.markdown("---")
+        st.info("**Steps:** 1️⃣ Download → 2️⃣ Edit → 3️⃣ Upload")
+    
     if st.button("🔐 Logout"):
-        for key in ["company_logged_in"]:
-            st.session_state[key] = None
+        st.session_state.company_logged_in = None
         st.rerun()
 
 st.markdown("---")
