@@ -265,4 +265,5 @@ else:
     st.button("🔐 Logout", on_click=lambda: [st.session_state.pop('company_logged_in'), st.rerun()])
 
 st.markdown("---")
-st.markdown("<p style='text-align: center; color: #666;'>© 2026 रामलाल हलवाई - Bikaner</p>", unsafe_allow_html=True)
+st.markdown("<p style='text-align: center; color: #666;'>© 2026 CREATED BY: NITIN KHATRI - Bikaner</p>", unsafe_allow_html=True)
+
