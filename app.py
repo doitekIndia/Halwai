@@ -17,7 +17,8 @@ st.markdown("""
 .admin-panel {background: linear-gradient(145deg, #dc2626, #ef4444); border: 2px solid #b91c1c; border-radius: 15px; padding: 1.5rem;}
 .company-card {background: linear-gradient(145deg, #10b981, #34d399); border-radius: 10px; padding: 1rem; margin: 0.5rem 0;}
 .expired {background: linear-gradient(145deg, #ef4444, #dc2626) !important; animation: pulse 2s infinite;}
-@keyframes pulse {{0% {{opacity: 1;}} 50% {{opacity: 0.7;}} 100% {{opacity: 1;}}}}
+.renew-btn {background: linear-gradient(145deg, gold, orange) !important; color: #1e3a8a !important; font-weight: bold; border: 2px solid #b91c1c !important; font-size: 1.2rem; padding: 1rem 2rem !important;}
+@keyframes pulse {0% {opacity: 1;} 50% {opacity: 0.7;} 100% {opacity: 1;}}
 </style>
 """, unsafe_allow_html=True)
 
@@ -145,7 +146,6 @@ if not st.session_state.admin_logged_in:
             if st.button("🏢 Company Login"):
                 config = load_config()
                 if config and selected_company in config["credentials"]["usernames"]:
-                    # Verify password (simplified - use proper Hasher in production)
                     if password == "company123":  # Default password
                         st.session_state.company_logged_in = selected_company
                         st.rerun()
@@ -184,7 +184,7 @@ if st.session_state.admin_logged_in:
         with col2:
             days = st.number_input("Days", 1, 365, 30)
         
-        if st.button("💰 Renew Subscription (₹5000)"):
+        if st.button("💰 Renew Subscription (₹5000)", type="primary"):
             subscriptions[company_to_extend]["expiry"] = (date.today() + timedelta(days=days)).isoformat()
             subscriptions[company_to_extend]["active"] = True
             subscriptions[company_to_extend]["paid"] += 5000
@@ -209,29 +209,66 @@ if st.session_state.admin_logged_in:
                             save_config(config)
                             st.success(f"✅ {company} password reset!")
     
-    if st.button("🔐 Logout Admin"):
+    if st.button("🔐 Logout Admin", type="secondary"):
         st.session_state.admin_logged_in = False
         st.rerun()
 
-# ===================== COMPANY DASHBOARD =====================
+# ===================== COMPANY DASHBOARD (UPDATED WITH SUBSCRIPTION BUTTON) =====================
 else:
     company = st.session_state.company_logged_in
     company_data = COMPANY_BOM[company]
     sub_data = subscriptions[company]
     
-    if not sub_data["active"] or date.fromisoformat(sub_data["expiry"]) <= date.today():
-        st.markdown("<div class='expired enterprise-card'>", unsafe_allow_html=True)
-        st.error("❌ **SUBSCRIPTION EXPIRED!** Contact Admin to renew (₹5000/30 days)")
-        st.markdown("</div>", unsafe_allow_html=True)
-        st.stop()
+    # Check subscription status
+    is_active = sub_data["active"] and date.fromisoformat(sub_data["expiry"]) > date.today()
+    days_left = (date.fromisoformat(sub_data["expiry"]) - date.today()).days if date.fromisoformat(sub_data["expiry"]) > date.today() else 0
     
+    # Welcome header with subscription status
     st.markdown(f"""
     <div class='enterprise-card'>
         <h1 class='title-gold'>स्वागत है {company_data['name']}! 👑</h1>
     </div>
     """, unsafe_allow_html=True)
     
-    # Bill generation (same as before but company-specific dishes)
+    # Subscription Status Card
+    if is_active:
+        st.markdown(f"""
+        <div class='company-card'>
+            <h3>✅ Subscription Active</h3>
+            <p><strong>Days Left:</strong> {days_left} | <strong>Total Paid:</strong> ₹{sub_data['paid']}</p>
+        </div>
+        """, unsafe_allow_html=True)
+    else:
+        st.markdown(f"""
+        <div class='expired enterprise-card'>
+            <h2>❌ SUBSCRIPTION EXPIRED!</h2>
+            <p><strong>Expiry:</strong> {sub_data['expiry']} | <strong>Total Paid:</strong> ₹{sub_data['paid']}</p>
+            <p><strong>Renew for ₹5000 (30 days)</strong></p>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    # WORKING SUBSCRIPTION RENEWAL BUTTON FOR COMPANIES
+    if not is_active:
+        st.markdown("### 💳 अपना Subscription Renew करें")
+        col1, col2 = st.columns([3, 1])
+        with col1:
+            st.info("👆 **Contact Admin** या नीचे button दबाएं (Demo mode)")
+        with col2:
+            if st.button("🔄 RENEW NOW (₹5000)", key="company_renew", help="Demo: Activates 30 days", 
+                        type="primary", use_container_width=True):
+                # Demo renewal (in production, integrate UPI/Razorpay)
+                subscriptions[company]["expiry"] = (date.today() + timedelta(days=30)).isoformat()
+                subscriptions[company]["active"] = True
+                subscriptions[company]["paid"] += 5000
+                save_data(subscriptions)
+                st.success("✅ Subscription renewed for 30 days! 🎉")
+                st.balloons()
+                st.rerun()
+        
+        st.markdown("**💳 Payment Methods:** UPI/GPay/PhonePe → Admin")
+        st.stop()
+    
+    # Bill generation (only if subscription active)
     tab1, tab2 = st.tabs(["💰 नया बिल", "📊 बिल इतिहास"])
     
     with tab1:
