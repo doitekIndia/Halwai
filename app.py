@@ -4,8 +4,6 @@ import pandas as pd
 import yaml
 import os
 from datetime import date
-from weasyprint import HTML
-import tempfile
 
 st.set_page_config(page_title="👑 कैटरिंग एंटरप्राइजेज", layout="wide")
 
@@ -50,13 +48,23 @@ COMPANY_PROFILES = {
 
 # ===================== ADMIN FUNCTIONS =====================
 def load_config():
+    # Try Streamlit secrets first, then local config.yaml
+    try:
+        if "credentials" in st.secrets:
+            return {
+                "credentials": st.secrets["credentials"],
+                "cookie": st.secrets["cookie"]
+            }
+    except:
+        pass
+    
+    # Fallback to local config.yaml
     if os.path.exists("config.yaml"):
         try:
             with open("config.yaml", encoding='utf-8') as file:
                 return yaml.safe_load(file)
         except Exception as e:
             st.error(f"❌ Config error: {e}")
-            return None
     return None
 
 def save_config(config):
@@ -75,7 +83,7 @@ def hash_password(password):
     except:
         return Hasher([password]).generate()[0]
 
-# ===================== LOAD CONFIG =====================
+# ===================== LOAD CONFIG & AUTH =====================
 config = load_config()
 if config is None:
     st.error("❌ config.yaml not found! Run generate_config.py first.")
@@ -112,41 +120,122 @@ def generate_bill(dishes, people):
             rows.append({"Dish": dish, "Ingredient": ing["item"], "Unit": ing["unit"], "Required Qty": round(ing["qty"] * factor, 2)})
     return pd.DataFrame(rows)
 
+# ===================== HTML INVOICE (REPLACES WEASYPRINT) =====================
 def generate_invoice_html(bill_df, customer, people, company_profile):
+    # Group by dish for better display
     rows = ""
     last_dish = None
     for _, row in bill_df.iterrows():
         dish = row["Dish"] if row["Dish"] != last_dish else ""
-        rows += f"<tr><td>{dish}</td><td>{row['Ingredient']}</td><td>{row['Unit']}</td><td style='text-align:right'>{row['Required Qty']}</td></tr>"
+        rows += f"""
+        <tr>
+            <td style='padding: 8px; border: 1px solid #333;'>{dish}</td>
+            <td style='padding: 8px; border: 1px solid #333;'>{row['Ingredient']}</td>
+            <td style='padding: 8px; border: 1px solid #333;'>{row['Unit']}</td>
+            <td style='padding: 8px; border: 1px solid #333; text-align: right;'>{row['Required Qty']}</td>
+        </tr>
+        """
         last_dish = row["Dish"]
     
     return f"""
-    <html><head><style>
-    @font-face {{font-family: HindiFont; src: url("fonts/NotoSansDevanagari-Regular.ttf");}}
-    body {{font-family: HindiFont, Arial; font-size: 12px;}}
-    h1 {{text-align: center; color: #1e3a8a; font-size: 24px;}}
-    .header {{text-align: center; margin: 20px 0;}}
-    table {{width: 100%; border-collapse: collapse; margin: 20px 0;}}
-    th {{background: #1e3a8a; color: white; padding: 8px; border: 1px solid black;}}
-    td {{padding: 6px; border: 1px solid black;}}
-    </style></head><body>
-    <div class="header">
-        <h1>{company_profile['name']}</h1>
-        <div style='font-size:14px;'>{company_profile['owners']}<br>{company_profile['contact']}</div>
-    </div>
-    <p><b>बिल तिथि:</b> {date.today().strftime('%d-%m-%Y')}<br><b>ग्राहक:</b> {customer}<br><b>कुल व्यक्ति:</b> {people}</p>
-    <table><tr><th>डिश</th><th>सामग्री</th><th>यूनिट</th><th>मात्रा</th></tr>{rows}</table>
-    <p style='margin-top:30px;'><b>Prepared By:</b> {company_profile['name']}<br><br>Authorized Signature: ______________________</p>
-    </body></html>"""
-
-def generate_invoice_pdf(bill_df, customer, people, company_profile):
-    html = generate_invoice_html(bill_df, customer, people, company_profile)
-    safe_customer = "".join(c for c in customer if c.isalnum() or c in (' ', '-', '_')).rstrip()
-    safe_company = username.replace("_", "")
-    filename = f"{safe_company}_{safe_customer}_{date.today().strftime('%d-%m-%Y')}.pdf"
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as f:
-        HTML(string=html, base_url=os.getcwd()).write_pdf(f.name)
-        return f.name, filename
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <title>{company_profile['name']} - बिल</title>
+        <style>
+            @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+Devanagari:wght@400;700&display=swap');
+            * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+            body {{ 
+                font-family: 'Noto Sans Devanagari', Arial, sans-serif; 
+                margin: 20px; 
+                line-height: 1.6;
+                font-size: 14px;
+            }}
+            .header {{ text-align: center; margin-bottom: 30px; padding-bottom: 20px; border-bottom: 3px solid #1e3a8a; }}
+            .header h1 {{ 
+                color: #1e3a8a; 
+                font-size: 28px; 
+                margin-bottom: 10px; 
+                font-weight: 700;
+            }}
+            .header .owners {{ font-size: 16px; color: #333; margin-bottom: 5px; }}
+            .header .contact {{ font-size: 14px; color: #666; }}
+            .bill-info {{ margin-bottom: 20px; padding: 15px; background: #f8f9fa; border-left: 5px solid #1e3a8a; }}
+            .bill-info strong {{ color: #1e3a8a; }}
+            table {{ 
+                width: 100%; 
+                border-collapse: collapse; 
+                margin: 20px 0; 
+                font-size: 13px;
+            }}
+            th {{ 
+                background: linear-gradient(145deg, #1e3a8a, #3b82f6); 
+                color: white; 
+                padding: 12px 8px; 
+                text-align: left; 
+                font-weight: 700;
+            }}
+            td {{ 
+                padding: 10px 8px; 
+                border: 1px solid #ddd; 
+                vertical-align: top;
+            }}
+            tr:nth-child(even) {{ background-color: #f8f9fa; }}
+            tr:hover {{ background-color: #e3f2fd; }}
+            .signature {{ 
+                margin-top: 40px; 
+                text-align: center; 
+                padding-top: 30px; 
+                border-top: 2px dashed #1e3a8a;
+            }}
+            .footer {{ 
+                margin-top: 30px; 
+                text-align: center; 
+                color: #666; 
+                font-size: 12px;
+                padding-top: 20px;
+                border-top: 1px solid #eee;
+            }}
+            @media print {{ body {{ margin: 0; }} .no-print {{ display: none; }} }}
+        </style>
+    </head>
+    <body>
+        <div class="header">
+            <h1>{company_profile['name']}</h1>
+            <div class="owners">{company_profile['owners']}</div>
+            <div class="contact">{company_profile['contact']}</div>
+        </div>
+        
+        <div class="bill-info">
+            <strong>बिल तिथि:</strong> {date.today().strftime('%d-%m-%Y')}<br>
+            <strong>ग्राहक:</strong> {customer}<br>
+            <strong>कुल व्यक्ति:</strong> {people}
+        </div>
+        
+        <table>
+            <thead>
+                <tr>
+                    <th>डिश</th>
+                    <th>सामग्री</th>
+                    <th>यूनिट</th>
+                    <th>आवश्यक मात्रा</th>
+                </tr>
+            </thead>
+            <tbody>{rows}</tbody>
+        </table>
+        
+        <div class="signature">
+            <p><strong>तैयार किया:</strong> {company_profile['name']}</p>
+            <p style="margin-top: 30px; font-size: 16px;">Authorized Signature: ______________________</p>
+        </div>
+        
+        <div class="footer">
+            रामलाल हलवाई कैटरिंग एंटरप्राइजेज - बीकानेर | © 2026
+        </div>
+    </body>
+    </html>
+    """
 
 # ===================== MAIN APP =====================
 if authentication_status:
@@ -162,7 +251,7 @@ if authentication_status:
     if not os.path.exists(HISTORY_FILE):
         pd.DataFrame(columns=["Date", "Customer", "People", "Dishes"]).to_csv(HISTORY_FILE, index=False)
 
-    # ===================== ADMIN SECTION - PERFECTLY FIXED =====================
+    # ===================== ADMIN SECTION =====================
     if is_admin(username):
         st.warning("⚠️ Admin cannot generate bills. Use Admin Panel only!")
         tab1, tab2 = st.tabs(["🔧 Admin Panel", "👥 Users"])
@@ -171,7 +260,6 @@ if authentication_status:
             st.markdown("<div class='admin-panel'>", unsafe_allow_html=True)
             st.markdown("### 👑 User Editor")
             
-            # Show all users table
             config = load_config()
             if config and "credentials" in config and "usernames" in config["credentials"]:
                 users_df = pd.DataFrame([
@@ -183,14 +271,12 @@ if authentication_status:
                 else:
                     st.info("No users found")
             
-            # User Editor Section
             st.markdown("---")
             if config and "credentials" in config and "usernames" in config["credentials"]:
                 user_list = [k for k in config["credentials"]["usernames"].keys() if k != "admin"]
                 if user_list:
                     selected_user = st.selectbox("👤 Select User to Edit", user_list)
                     
-                    # Pre-fill current values
                     current_user = config["credentials"]["usernames"][selected_user]
                     col1, col2, col3 = st.columns(3)
                     with col1:
@@ -200,7 +286,6 @@ if authentication_status:
                     with col3:
                         new_password = st.text_input("🔐 New Password (leave empty to keep)", type="password", value="")
                     
-                    # Action Buttons
                     col4, col5 = st.columns([2, 1])
                     with col4:
                         if st.button("💾 UPDATE USER", type="primary", use_container_width=True):
@@ -223,9 +308,6 @@ if authentication_status:
                             st.rerun()
                 else:
                     st.warning("No editable users found")
-            else:
-                st.error("Config not loaded properly")
-            
             st.markdown("</div>", unsafe_allow_html=True)
         
         with tab2:
@@ -258,9 +340,16 @@ if authentication_status:
                 st.markdown("### 📋 सामग्री आवश्यकता")
                 st.dataframe(bill_df, use_container_width=True)
 
-                pdf_path, filename = generate_invoice_pdf(bill_df, customer, people, company_profile)
-                with open(pdf_path, "rb") as f:
-                    st.download_button("📥 PDF डाउनलोड", f, file_name=filename, mime="application/pdf")
+                # ✅ HTML DOWNLOAD (WORKS ON STREAMLIT CLOUD!)
+                html_content = generate_invoice_html(bill_df, customer, people, company_profile)
+                safe_filename = f"{username}_{customer.replace(' ', '_')}_{date.today().strftime('%d-%m-%Y')}.html"
+                
+                st.download_button(
+                    label="📥 HTML बिल डाउनलोड (प्रिंट → PDF)",
+                    data=html_content.encode('utf-8'),
+                    file_name=safe_filename,
+                    mime="text/html"
+                )
                 
                 # Save history
                 new_record = pd.DataFrame({
@@ -270,7 +359,7 @@ if authentication_status:
                 history = pd.read_csv(HISTORY_FILE)
                 history = pd.concat([history, new_record], ignore_index=True)
                 history.to_csv(HISTORY_FILE, index=False)
-                st.success(f"✅ बिल '{customer}' के लिए तैयार!")
+                st.success(f"✅ बिल '{customer}' के लिए तैयार! HTML डाउनलोड करें → Chrome में Print → Save as PDF!")
 
         with tab2:
             if os.path.exists(HISTORY_FILE):
