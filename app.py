@@ -93,8 +93,6 @@ if "admin_logged_in" not in st.session_state:
     st.session_state.admin_logged_in = False
 if "company_logged_in" not in st.session_state:
     st.session_state.company_logged_in = None
-if "bill_data" not in st.session_state:
-    st.session_state.bill_data = None
 
 # ===================== LOGIN =====================
 if not st.session_state.admin_logged_in and not st.session_state.company_logged_in:
@@ -179,102 +177,101 @@ else:
     
     tab1, tab2 = st.tabs(["💰 Bill", "📦 BOM"])
     
-    # 🔥 FIXED BILL GENERATION - NO FORM FOR DOWNLOAD
+    # 🔥 PERFECT BILL GENERATION - Dish name ONCE + Indented ingredients
     with tab1:
-    st.markdown("### 💰 बिल बनाएं")
-    col1, col2 = st.columns([2,1])
-    with col1: 
-        customer = st.text_input("👨‍👩‍👧‍👦 ग्राहक का नाम", placeholder="Bikaji Foods")
-    with col2: 
-        people = st.number_input("👥 व्यक्ति", 25, 5000, 150)
-    
-    dishes = st.multiselect("🍽️ डिशेज", list(company_bom.keys()), default=list(company_bom.keys())[:5])
-    generate = st.button("📄 बिल बनाएं", type="primary")
-    
-    if generate and customer and dishes:
-        factor = people / BASE_PEOPLE
-        bill_items = []
+        st.markdown("### 💰 बिल बनाएं")
+        col1, col2 = st.columns([2,1])
+        with col1: 
+            customer = st.text_input("👨‍👩‍👧‍👦 ग्राहक का नाम", placeholder="Bikaji Foods")
+        with col2: 
+            people = st.number_input("👥 व्यक्ति", 25, 5000, 150)
         
-        # 🔥 DISH-WISE (Dish name ONCE)
-        for dish in dishes:
-            bill_items.append({
-                "डिश": dish,
-                "सामग्री": "",
-                "मात्रा": ""
-            })
-            for item_data in company_bom[dish]:
-                qty = round(item_data["qty"] * factor, 1)
+        dishes = st.multiselect("🍽️ डिशेज", list(company_bom.keys()), default=list(company_bom.keys())[:5])
+        generate = st.button("📄 बिल बनाएं", type="primary")
+        
+        if generate and customer and dishes:
+            factor = people / BASE_PEOPLE
+            bill_items = []
+            
+            # 🔥 DISH-WISE (Dish name ONCE per dish)
+            for dish in dishes:
                 bill_items.append({
-                    "डिश": "",
-                    "सामग्री": item_data["item"],
-                    "मात्रा": f"{qty} {item_data['unit']}"
+                    "डिश": dish,
+                    "सामग्री": "",
+                    "मात्रा": ""
                 })
-        
-        bill_df = pd.DataFrame(bill_items)
-        st.markdown("### 📋 **डिश अनुसार सामग्री**")
-        st.dataframe(bill_df, use_container_width=True, hide_index=True)
-        
-        # 🔥 CLEAN HTML - Dish name ONCE
-        html_content = f"""
-        <!DOCTYPE html>
-        <html><head><meta charset="UTF-8">
-        <title>{company_info['name']} बिल</title>
-        <style>
-        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+Devanagari:wght@400;700&display=swap');
-        body {{font-family: 'Noto Sans Devanagari', Arial; margin: 0; padding: 20px; background: #f8f9fa;}}
-        .header {{background: linear-gradient(145deg, #1e3a8a, #3b82f6); color: white; padding: 25px; border-radius: 15px; text-align: center; margin-bottom: 20px;}}
-        .info {{background: white; padding: 20px; border-radius: 12px; margin: 15px 0; box-shadow: 0 8px 25px rgba(0,0,0,0.1);}}
-        table {{width: 100%; border-collapse: collapse; margin: 20px 0; background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 8px 25px rgba(0,0,0,0.1);}}
-        th {{background: #1e3a8a !important; color: white; padding: 15px; font-weight: bold; font-size: 16px;}}
-        .dish-name {{background: #dbeafe !important; font-weight: bold; font-size: 16px; border-left: 6px solid #1e3a8a; padding-left: 20px !important;}}
-        .ingredient {{padding-left: 40px !important; border-left: 3px solid #60a5fa;}}
-        td {{padding: 14px 15px; border-bottom: 1px solid #eee; font-size: 15px;}}
-        tr:nth-child(even) {{background: #f8f9fa;}}
-        tr:hover {{background: #e3f2fd !important;}}
-        .signature {{text-align: center; margin-top: 40px; font-size: 18px; padding: 20px; background: white; border-radius: 10px; box-shadow: 0 5px 15px rgba(0,0,0,0.1);}}
-        @media print {{body {{background: white; margin: 0;}} .no-print {{display: none;}}}}
-        </style>
-        </head><body>
-        <div class='header'>
-            <h1 style='margin: 0; font-size: 32px;'>{company_info['name']}</h1>
-            <p style='margin: 8px 0 0 0; font-size: 18px;'>{company_info['owners']}</p>
-            <p style='margin: 0; font-size: 16px;'>{company_info['contact']}</p>
-        </div>
-        <div class='info'>
-            <strong>ग्राहक:</strong> {customer} | <strong>कुल व्यक्ति:</strong> {people} | 
-            <strong>तारीख:</strong> {date.today().strftime('%d/%m/%Y')} | 
-            <strong>चयनित डिशेज:</strong> {len(dishes)}
-        </div>
-        
-        <table>
-        <thead><tr><th>डिश</th><th>सामग्री</th><th>मात्रा</th></tr></thead>
-        <tbody>
-        """
-        
-        # Add dish name ONCE + ingredients indented
-        for dish in dishes:
-            html_content += f"<tr class='dish-name'><td colspan='3'>{dish}</td></tr>"
-            for item_data in company_bom[dish]:
-                qty = round(item_data["qty"] * factor, 1)
-                html_content += f"<tr class='ingredient'><td></td><td>{item_data['item']}</td><td>{qty} {item_data['unit']}</td></tr>"
-        
-        html_content += """
-        </tbody></table>
-        <div class='signature'>
-            <strong>हस्ताक्षर:</strong> <span style='border-bottom: 3px solid #1e3a8a; width: 250px; display: inline-block; padding: 0 10px;'>__________________________</span>
-            <br><small>ग्राहक हस्ताक्षर | Customer Signature</small>
-        </div>
-        </body></html>
-        """
-        
-        st.download_button(
-            label="📥 बिल डाउनलोड (Print → PDF)",
-            data=html_content.encode('utf-8'),
-            file_name=f"{company}_{customer}_{people}people_{date.today().strftime('%d%m%Y')}.html",
-            mime="text/html",
-            use_container_width=True
-        )
-
+                for item_data in company_bom[dish]:
+                    qty = round(item_data["qty"] * factor, 1)
+                    bill_items.append({
+                        "डिश": "",
+                        "सामग्री": item_data["item"],
+                        "मात्रा": f"{qty} {item_data['unit']}"
+                    })
+            
+            bill_df = pd.DataFrame(bill_items)
+            st.markdown("### 📋 **डिश अनुसार सामग्री**")
+            st.dataframe(bill_df, use_container_width=True, hide_index=True)
+            
+            # 🔥 PROFESSIONAL HTML - Dish name ONCE + Indented ingredients
+            html_content = f"""
+            <!DOCTYPE html>
+            <html><head><meta charset="UTF-8">
+            <title>{company_info['name']} बिल</title>
+            <style>
+            @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+Devanagari:wght@400;700&display=swap');
+            body {{font-family: 'Noto Sans Devanagari', Arial; margin: 0; padding: 20px; background: #f8f9fa;}}
+            .header {{background: linear-gradient(145deg, #1e3a8a, #3b82f6); color: white; padding: 25px; border-radius: 15px; text-align: center; margin-bottom: 20px;}}
+            .info {{background: white; padding: 20px; border-radius: 12px; margin: 15px 0; box-shadow: 0 8px 25px rgba(0,0,0,0.1);}}
+            table {{width: 100%; border-collapse: collapse; margin: 20px 0; background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 8px 25px rgba(0,0,0,0.1);}}
+            th {{background: #1e3a8a !important; color: white; padding: 15px; font-weight: bold; font-size: 16px;}}
+            .dish-name {{background: #dbeafe !important; font-weight: bold; font-size: 16px; border-left: 6px solid #1e3a8a; padding-left: 20px !important;}}
+            .ingredient {{padding-left: 40px !important; border-left: 3px solid #60a5fa;}}
+            td {{padding: 14px 15px; border-bottom: 1px solid #eee; font-size: 15px;}}
+            tr:nth-child(even) {{background: #f8f9fa;}}
+            tr:hover {{background: #e3f2fd !important;}}
+            .signature {{text-align: center; margin-top: 40px; font-size: 18px; padding: 20px; background: white; border-radius: 10px; box-shadow: 0 5px 15px rgba(0,0,0,0.1);}}
+            @media print {{body {{background: white; margin: 0;}} .no-print {{display: none;}}}}
+            </style>
+            </head><body>
+            <div class='header'>
+                <h1 style='margin: 0; font-size: 32px;'>{company_info['name']}</h1>
+                <p style='margin: 8px 0 0 0; font-size: 18px;'>{company_info['owners']}</p>
+                <p style='margin: 0; font-size: 16px;'>{company_info['contact']}</p>
+            </div>
+            <div class='info'>
+                <strong>ग्राहक:</strong> {customer} | <strong>कुल व्यक्ति:</strong> {people} | 
+                <strong>तारीख:</strong> {date.today().strftime('%d/%m/%Y')} | 
+                <strong>चयनित डिशेज:</strong> {len(dishes)}
+            </div>
+            
+            <table>
+            <thead><tr><th>डिश</th><th>सामग्री</th><th>मात्रा</th></tr></thead>
+            <tbody>
+            """
+            
+            # Add dish name ONCE + ingredients indented
+            for dish in dishes:
+                html_content += f"<tr class='dish-name'><td colspan='3'>{dish}</td></tr>"
+                for item_data in company_bom[dish]:
+                    qty = round(item_data["qty"] * factor, 1)
+                    html_content += f"<tr class='ingredient'><td></td><td>{item_data['item']}</td><td>{qty} {item_data['unit']}</td></tr>"
+            
+            html_content += """
+            </tbody></table>
+            <div class='signature'>
+                <strong>हस्ताक्षर:</strong> <span style='border-bottom: 3px solid #1e3a8a; width: 250px; display: inline-block; padding: 0 10px;'>__________________________</span>
+                <br><small>ग्राहक हस्ताक्षर | Customer Signature</small>
+            </div>
+            </body></html>
+            """
+            
+            st.download_button(
+                label="📥 बिल डाउनलोड (Print → PDF)",
+                data=html_content.encode('utf-8'),
+                file_name=f"{company}_{customer}_{people}people_{date.today().strftime('%d%m%Y')}.html",
+                mime="text/html",
+                use_container_width=True
+            )
     
     with tab2:
         col1, col2 = st.columns(2)
@@ -297,4 +294,3 @@ else:
 
 st.markdown("---")
 st.markdown("<p style='text-align: center; color: #666;'>© 2026 रामलाल हलवाई - Bikaner</p>", unsafe_allow_html=True)
-
