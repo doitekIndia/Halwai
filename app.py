@@ -63,8 +63,6 @@ COMPANY_BOM = {
 @st.cache_data
 def load_data():
     os.makedirs("data", exist_ok=True)
-    
-    # Subscriptions data
     SUB_FILE = "data/subscriptions.json"
     if not os.path.exists(SUB_FILE):
         default_subs = {
@@ -75,7 +73,6 @@ def load_data():
         with open(SUB_FILE, 'w') as f:
             json.dump(default_subs, f)
         return default_subs
-    
     with open(SUB_FILE, 'r') as f:
         return json.load(f)
 
@@ -91,9 +88,13 @@ if "admin_logged_in" not in st.session_state:
     st.session_state.admin_logged_in = False
 if "company_logged_in" not in st.session_state:
     st.session_state.company_logged_in = None
+if "login_complete" not in st.session_state:
+    st.session_state.login_complete = False
 
-# ===================== FIXED LOGIN SCREEN =====================
-if not st.session_state.admin_logged_in:
+# ===================== LOGIN SCREEN =====================
+if not st.session_state.admin_logged_in and not st.session_state.company_logged_in:
+    st.markdown("<h1 class='title-gold'>🔐 LOGIN REQUIRED</h1>", unsafe_allow_html=True)
+    
     admin_tab, company_tab = st.tabs(["🔧 Admin Login", "🏢 Company Login"])
     
     with admin_tab:
@@ -102,66 +103,54 @@ if not st.session_state.admin_logged_in:
         st.info("👤 **Username:** `admin`")
         st.info("🔑 **Password:** `admin123`")
         
-        admin_user = st.text_input("Admin Username", placeholder="admin")
-        admin_pass = st.text_input("Admin Password", type="password", placeholder="admin123")
+        col1, col2 = st.columns(2)
+        with col1:
+            admin_user = st.text_input("Admin Username", placeholder="admin")
+        with col2:
+            admin_pass = st.text_input("Admin Password", type="password", placeholder="admin123")
         
         if st.button("🔐 Admin Login", type="primary", use_container_width=True):
             if admin_user == "admin" and admin_pass == "admin123":
                 st.session_state.admin_logged_in = True
-                st.success("✅ Admin Login Successful!")
+                st.session_state.login_complete = True
+                st.success("✅ Admin Login Successful! 👑")
                 st.rerun()
             else:
-                st.error("❌ गलत Admin Credentials! Use: admin/admin123")
+                st.error("❌ गलत Credentials! admin/admin123")
         st.markdown("</div>", unsafe_allow_html=True)
     
     with company_tab:
-        st.markdown("### 🔥 **Company Credentials**")
-        st.info("🔑 **Password for ALL companies:** `company123`")
-        st.info("✅ **ramlal_halwai** = Active | ❌ Others = Expired (use RENEW)")
+        st.markdown("### 🔥 **Company Login**")
+        st.info("🔑 **Password:** `company123` (All companies)")
         
-        if st.session_state.company_logged_in:
-            company = st.session_state.company_logged_in
-            if subscriptions[company]["active"] and date.fromisoformat(subscriptions[company]["expiry"]) > date.today():
-                st.success(f"✅ Logged in as **{COMPANY_BOM[company]['name']}**")
-                if st.button("🔐 Logout"):
-                    st.session_state.company_logged_in = None
-                    st.rerun()
+        col1, col2 = st.columns(2)
+        with col1:
+            company_list = ["ramlal_halwai", "bhanwarlal_halwai", "motilal_sweet"]
+            selected_company = st.selectbox("🏢 Company", company_list, index=0)
+            st.info(f"**Status:** {'✅ Active' if subscriptions[selected_company]['active'] and date.fromisoformat(subscriptions[selected_company]['expiry']) > date.today() else '❌ Expired'}")
+        with col2:
+            password = st.text_input("🔑 Password", type="password", placeholder="company123")
+        
+        if st.button("🏢 Company Login", type="primary", use_container_width=True):
+            if password == "company123":
+                st.session_state.company_logged_in = selected_company
+                st.session_state.login_complete = True
+                st.success(f"✅ {COMPANY_BOM[selected_company]['name']} Login!")
+                st.rerun()
             else:
-                st.error("❌ Subscription Expired! Use RENEW button.")
-                if st.button("🔐 Logout"):
-                    st.session_state.company_logged_in = None
-                    st.rerun()
-        else:
-            col1, col2 = st.columns(2)
-            with col1:
-                company_list = ["ramlal_halwai", "bhanwarlal_halwai", "motilal_sweet"]
-                selected_company = st.selectbox("🏢 Company", company_list, index=0)
-            with col2:
-                password = st.text_input("🔑 Password", type="password", placeholder="company123")
-            
-            if st.button("🏢 Company Login", type="primary", use_container_width=True):
-                # ✅ FIXED: SIMPLE PASSWORD CHECK - NO CONFIG.YAML DEPENDENCY
-                if password == "company123":
-                    st.session_state.company_logged_in = selected_company
-                    st.success(f"✅ Login successful for {COMPANY_BOM[selected_company]['name']}!")
-                    st.rerun()
-                else:
-                    st.error("❌ Password must be: **company123**")
-
-    st.stop()
+                st.error("❌ Password: **company123**")
 
 # ===================== ADMIN DASHBOARD =====================
-if st.session_state.admin_logged_in:
+elif st.session_state.admin_logged_in:
     st.markdown(f"""
     <div class='enterprise-card'>
         <h1 class='title-gold'>Admin Panel 👑</h1>
     </div>
     """, unsafe_allow_html=True)
     
-    tab1, tab2, tab3 = st.tabs(["💳 Subscriptions", "🔐 Users", "📊 Analytics"])
+    tab1, tab2 = st.tabs(["💳 Subscriptions", "🔐 Users"])
     
     with tab1:
-        st.markdown("### 💳 Company Subscriptions (₹5000/30 days)")
         sub_df = pd.DataFrame([
             {
                 "Company": COMPANY_BOM[c]["name"],
@@ -176,99 +165,73 @@ if st.session_state.admin_logged_in:
         
         col1, col2 = st.columns(2)
         with col1:
-            company_to_extend = st.selectbox("Extend Subscription", list(subscriptions.keys()))
+            company_to_extend = st.selectbox("Extend", list(subscriptions.keys()))
         with col2:
             days = st.number_input("Days", 1, 365, 30)
         
-        if st.button("💰 Renew Subscription (₹5000)", type="primary"):
+        if st.button("💰 Renew (₹5000)", type="primary"):
             subscriptions[company_to_extend]["expiry"] = (date.today() + timedelta(days=days)).isoformat()
             subscriptions[company_to_extend]["active"] = True
             subscriptions[company_to_extend]["paid"] += 5000
             save_data(subscriptions)
-            st.success(f"✅ {COMPANY_BOM[company_to_extend]['name']} renewed!")
-            st.balloons()
+            st.success(f"✅ {COMPANY_BOM[company_to_extend]['name']} Renewed!")
             st.rerun()
     
     with tab2:
-        st.markdown("### 🔐 User Management")
-        st.info("✅ All companies use password: **company123**")
-        st.info("🔧 No config.yaml needed - Simple auth working!")
-        
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            if st.button("🔄 Reset All Subscriptions", type="secondary"):
-                default_subs = {
-                    "ramlal_halwai": {"expiry": (date.today() + timedelta(days=30)).isoformat(), "active": True, "paid": 5000},
-                    "bhanwarlal_halwai": {"expiry": date.today().isoformat(), "active": False, "paid": 0},
-                    "motilal_sweet": {"expiry": date.today().isoformat(), "active": False, "paid": 0}
-                }
-                subscriptions.update(default_subs)
-                save_data(subscriptions)
-                st.success("✅ Subscriptions reset!")
-                st.rerun()
+        st.success("✅ All companies: **company123**")
+        if st.button("🔄 Reset All Data", type="secondary"):
+            os.remove("data/subscriptions.json")
+            st.success("✅ Data Reset!")
+            st.rerun()
     
-    with tab3:
-        st.markdown("### 📊 Analytics")
-        total_paid = sum(sub["paid"] for sub in subscriptions.values())
-        active_count = sum(1 for sub in subscriptions.values() if sub["active"] and date.fromisoformat(sub["expiry"]) > date.today())
-        st.metric("Total Revenue", f"₹{total_paid}")
-        st.metric("Active Companies", active_count)
-    
-    if st.button("🔐 Logout Admin", type="secondary"):
-        st.session_state.admin_logged_in = False
-        st.rerun()
+    st.button("🔐 Logout", on_click=lambda: [setattr(st.session_state, k, False) for k in ["admin_logged_in", "company_logged_in", "login_complete"]]+[st.rerun()])
 
-# ===================== COMPANY DASHBOARD =====================
-else:
+# ===================== COMPANY DASHBOARD - NOW WORKS! =====================
+else:  # Company logged in
     company = st.session_state.company_logged_in
     company_data = COMPANY_BOM[company]
     sub_data = subscriptions[company]
     
-    # Check subscription status
     is_active = sub_data["active"] and date.fromisoformat(sub_data["expiry"]) > date.today()
     days_left = max(0, (date.fromisoformat(sub_data["expiry"]) - date.today()).days)
     
-    # Welcome header
+    # 🎉 COMPANY DASHBOARD STARTS HERE - NO MORE st.stop() BLOCKING!
     st.markdown(f"""
     <div class='enterprise-card'>
         <h1 class='title-gold'>स्वागत है {company_data['name']}! 👑</h1>
     </div>
     """, unsafe_allow_html=True)
     
-    # Subscription Status
+    # Status
     if is_active:
         st.markdown(f"""
         <div class='company-card'>
-            <h3>✅ Subscription Active</h3>
-            <p><strong>Days Left:</strong> {days_left} | <strong>Total Paid:</strong> ₹{sub_data['paid']}</p>
+            <h3>✅ ACTIVE - {days_left} Days Left</h3>
+            <p>Total Paid: ₹{sub_data['paid']}</p>
         </div>
         """, unsafe_allow_html=True)
     else:
         st.markdown(f"""
         <div class='expired enterprise-card'>
-            <h2>❌ SUBSCRIPTION EXPIRED!</h2>
-            <p><strong>Expired on:</strong> {sub_data['expiry']} | <strong>Total Paid:</strong> ₹{sub_data['paid']}</p>
+            <h2>❌ SUBSCRIPTION EXPIRED</h2>
+            <p>Expired: {sub_data['expiry']}</p>
         </div>
         """, unsafe_allow_html=True)
     
-    # COMPANY RENEWAL BUTTON (Demo mode)
+    # RENEWAL BUTTON (only if expired)
     if not is_active:
-        st.markdown("### 💳 Subscription Renew करें")
-        st.info("👆 **Demo:** Click below → Auto renews 30 days")
-        
-        if st.button("🔄 RENEW NOW (₹5000/30 days)", type="primary", use_container_width=True, help="Demo renewal"):
+        if st.button("🔄 RENEW NOW (₹5000/30 days)", type="primary", use_container_width=True):
             subscriptions[company]["expiry"] = (date.today() + timedelta(days=30)).isoformat()
             subscriptions[company]["active"] = True
             subscriptions[company]["paid"] += 5000
             save_data(subscriptions)
-            st.success("✅ Subscription renewed for 30 days! 🎉")
+            st.success("✅ Renewed! 🎉")
             st.balloons()
             st.rerun()
-        
-        st.markdown("**💳 Production:** UPI/GPay → Admin")
         st.stop()
     
-    # Bill generation (only if active)
+    # 🎊 BILL GENERATION - MAIN FEATURE
+    st.markdown("## 💰 बिल जेनरेट करें")
     tab1, tab2 = st.tabs(["💰 नया बिल", "📊 बिल इतिहास"])
     
     with tab1:
@@ -280,11 +243,10 @@ else:
                 people = st.number_input("👥 कुल व्यक्ति", 25, 5000, 150, 25)
             
             dishes = st.multiselect(
-                "🍽️ अपनी कंपनी की डिशेज चुनें:",
+                "🍽️ डिशेज चुनें:",
                 list(company_data["dishes"].keys()),
                 default=list(company_data["dishes"].keys())[:2]
             )
-            
             submitted = st.form_submit_button("📄 बिल बनाएं", type="primary")
         
         if submitted and customer and dishes:
@@ -302,7 +264,6 @@ else:
             st.markdown("### 📋 सामग्री आवश्यकता")
             st.dataframe(bill_df, use_container_width=True)
             
-            # HTML Invoice
             html_content = f"""
             <!DOCTYPE html>
             <html><head><meta charset="UTF-8">
@@ -322,13 +283,14 @@ else:
             <p style='text-align:center; margin-top:40px'>Signature: ______________</p>
             </body></html>
             """
-            
             st.download_button(
                 "📥 बिल डाउनलोड (Print → PDF)",
                 html_content.encode('utf-8'),
                 f"{company}_{customer}_{date.today()}.html",
                 "text/html"
             )
+    
+    st.button("🔐 Logout", on_click=lambda: [setattr(st.session_state, k, False) for k in ["company_logged_in", "login_complete"]]+[st.rerun()])
 
 st.markdown("---")
 st.markdown("<p style='text-align: center; color: #666;'>© 2026 रामलाल हलवाई एंटरप्राइजेज - Bikaner</p>", unsafe_allow_html=True)
