@@ -182,7 +182,7 @@ else:
         st.markdown("### 💰 बिल बनाएं")
         col1, col2 = st.columns([2,1])
         with col1: 
-            customer = st.text_input("👨‍👩‍👧‍👦 ग्राहक का नाम", placeholder="Bikaji Foods")
+            customer = st.text_input("👨‍👩‍👧‍👦 ग्राहक का नाम", placeholder="Rajesh Khanna")
         with col2: 
             people = st.number_input("👥 व्यक्ति", 25, 5000, 150)
         
@@ -294,4 +294,5 @@ else:
 
 st.markdown("---")
 st.markdown("<p style='text-align: center; color: #666;'>© 2026 रामलाल हलवाई - Bikaner</p>", unsafe_allow_html=True)
+
 
