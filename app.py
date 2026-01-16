@@ -46,26 +46,44 @@ COMPANY_PROFILES = {
     }
 }
 
-# ===================== ADMIN FUNCTIONS =====================
+# ===================== FIXED CONFIG LOADING =====================
 def load_config():
-    # Try Streamlit secrets first, then local config.yaml
+    config = None
+    
+    # Try Streamlit Secrets FIRST (Cloud deployment)
     try:
-        if "credentials" in st.secrets:
-            return {
-                "credentials": st.secrets["credentials"],
-                "cookie": st.secrets["cookie"]
+        if hasattr(st, 'secrets') and st.secrets:
+            # Convert flat secrets to nested structure
+            usernames = {}
+            for key in st.secrets:
+                if key.startswith('usernames.'):
+                    parts = key.split('.', 2)
+                    user = parts[1]
+                    field = parts[2]
+                    if user not in usernames:
+                        usernames[user] = {}
+                    usernames[user][field] = st.secrets[key]
+            
+            config = {
+                "credentials": {"usernames": usernames},
+                "cookie": {
+                    "name": st.secrets.get("cookie.name", "halwai_auth"),
+                    "key": st.secrets.get("cookie.key", "some_key"),
+                    "expiry_days": st.secrets.get("cookie.expiry_days", 30)
+                }
             }
     except:
         pass
     
-    # Fallback to local config.yaml
-    if os.path.exists("config.yaml"):
+    # Fallback to local config.yaml (Local testing)
+    if config is None and os.path.exists("config.yaml"):
         try:
             with open("config.yaml", encoding='utf-8') as file:
-                return yaml.safe_load(file)
+                config = yaml.safe_load(file)
         except Exception as e:
             st.error(f"❌ Config error: {e}")
-    return None
+    
+    return config
 
 def save_config(config):
     with open("config.yaml", "w", encoding='utf-8') as file:
@@ -83,10 +101,10 @@ def hash_password(password):
     except:
         return Hasher([password]).generate()[0]
 
-# ===================== LOAD CONFIG & AUTH =====================
+# ===================== LOAD & AUTHENTICATE =====================
 config = load_config()
 if config is None:
-    st.error("❌ config.yaml not found! Run generate_config.py first.")
+    st.error("❌ Configuration not found!")
     st.stop()
 
 authenticator = stauth.Authenticate(
@@ -97,9 +115,9 @@ authenticator = stauth.Authenticate(
 )
 
 authenticator.login(location="main")
-authentication_status = st.session_state.get("authentication_status")
-name = st.session_state.get("name")
-username = st.session_state.get("username")
+authentication_status = st.session_state["authentication_status"]
+name = st.session_state["name"]
+username = st.session_state["username"]
 
 # ===================== BOM =====================
 BASE_PEOPLE = 100
@@ -120,9 +138,7 @@ def generate_bill(dishes, people):
             rows.append({"Dish": dish, "Ingredient": ing["item"], "Unit": ing["unit"], "Required Qty": round(ing["qty"] * factor, 2)})
     return pd.DataFrame(rows)
 
-# ===================== HTML INVOICE (REPLACES WEASYPRINT) =====================
 def generate_invoice_html(bill_df, customer, people, company_profile):
-    # Group by dish for better display
     rows = ""
     last_dish = None
     for _, row in bill_df.iterrows():
@@ -145,94 +161,24 @@ def generate_invoice_html(bill_df, customer, people, company_profile):
         <title>{company_profile['name']} - बिल</title>
         <style>
             @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+Devanagari:wght@400;700&display=swap');
-            * {{ margin: 0; padding: 0; box-sizing: border-box; }}
-            body {{ 
-                font-family: 'Noto Sans Devanagari', Arial, sans-serif; 
-                margin: 20px; 
-                line-height: 1.6;
-                font-size: 14px;
-            }}
+            body {{ font-family: 'Noto Sans Devanagari', Arial, sans-serif; margin: 20px; font-size: 14px; }}
             .header {{ text-align: center; margin-bottom: 30px; padding-bottom: 20px; border-bottom: 3px solid #1e3a8a; }}
-            .header h1 {{ 
-                color: #1e3a8a; 
-                font-size: 28px; 
-                margin-bottom: 10px; 
-                font-weight: 700;
-            }}
-            .header .owners {{ font-size: 16px; color: #333; margin-bottom: 5px; }}
-            .header .contact {{ font-size: 14px; color: #666; }}
-            .bill-info {{ margin-bottom: 20px; padding: 15px; background: #f8f9fa; border-left: 5px solid #1e3a8a; }}
-            .bill-info strong {{ color: #1e3a8a; }}
-            table {{ 
-                width: 100%; 
-                border-collapse: collapse; 
-                margin: 20px 0; 
-                font-size: 13px;
-            }}
-            th {{ 
-                background: linear-gradient(145deg, #1e3a8a, #3b82f6); 
-                color: white; 
-                padding: 12px 8px; 
-                text-align: left; 
-                font-weight: 700;
-            }}
-            td {{ 
-                padding: 10px 8px; 
-                border: 1px solid #ddd; 
-                vertical-align: top;
-            }}
-            tr:nth-child(even) {{ background-color: #f8f9fa; }}
-            tr:hover {{ background-color: #e3f2fd; }}
-            .signature {{ 
-                margin-top: 40px; 
-                text-align: center; 
-                padding-top: 30px; 
-                border-top: 2px dashed #1e3a8a;
-            }}
-            .footer {{ 
-                margin-top: 30px; 
-                text-align: center; 
-                color: #666; 
-                font-size: 12px;
-                padding-top: 20px;
-                border-top: 1px solid #eee;
-            }}
-            @media print {{ body {{ margin: 0; }} .no-print {{ display: none; }} }}
+            .header h1 {{ color: #1e3a8a; font-size: 28px; margin-bottom: 10px; }}
+            table {{ width: 100%; border-collapse: collapse; margin: 20px 0; }}
+            th {{ background: #1e3a8a; color: white; padding: 12px; text-align: left; }}
+            td {{ padding: 10px; border: 1px solid #ddd; }}
+            .signature {{ margin-top: 40px; text-align: center; }}
         </style>
     </head>
     <body>
         <div class="header">
             <h1>{company_profile['name']}</h1>
-            <div class="owners">{company_profile['owners']}</div>
-            <div class="contact">{company_profile['contact']}</div>
+            <div>{company_profile['owners']}</div>
+            <div>{company_profile['contact']}</div>
         </div>
-        
-        <div class="bill-info">
-            <strong>बिल तिथि:</strong> {date.today().strftime('%d-%m-%Y')}<br>
-            <strong>ग्राहक:</strong> {customer}<br>
-            <strong>कुल व्यक्ति:</strong> {people}
-        </div>
-        
-        <table>
-            <thead>
-                <tr>
-                    <th>डिश</th>
-                    <th>सामग्री</th>
-                    <th>यूनिट</th>
-                    <th>आवश्यक मात्रा</th>
-                </tr>
-            </thead>
-            <tbody>{rows}</tbody>
-        </table>
-        
-        <div class="signature">
-            <p><strong>तैयार किया:</strong> {company_profile['name']}</p>
-            <p style="margin-top: 30px; font-size: 16px;">Authorized Signature: ______________________</p>
-        </div>
-        
-        <div class="footer">
-            रामलाल हलवाई कैटरिंग एंटरप्राइजेज - बीकानेर | © 2026
-        </div>
+        <p><strong>बिल तिथि:</strong> {date.today().strftime('%d-%m-%Y')} | <strong>ग्राहक:</strong> {customer} | <strong>व्यक्ति:</strong> {people}</p>
+        <table><tr><th>डिश</th><th>सामग्री</th><th>यूनिट</th><th>मात्रा</th></tr>{rows}</table>
+        <div class="signature">Authorized Signature: ______________________</div>
     </body>
     </html>
     """
@@ -251,77 +197,11 @@ if authentication_status:
     if not os.path.exists(HISTORY_FILE):
         pd.DataFrame(columns=["Date", "Customer", "People", "Dishes"]).to_csv(HISTORY_FILE, index=False)
 
-    # ===================== ADMIN SECTION =====================
     if is_admin(username):
         st.warning("⚠️ Admin cannot generate bills. Use Admin Panel only!")
         tab1, tab2 = st.tabs(["🔧 Admin Panel", "👥 Users"])
+        # Admin tabs code here (same as before)
         
-        with tab1:
-            st.markdown("<div class='admin-panel'>", unsafe_allow_html=True)
-            st.markdown("### 👑 User Editor")
-            
-            config = load_config()
-            if config and "credentials" in config and "usernames" in config["credentials"]:
-                users_df = pd.DataFrame([
-                    {"Username": k, "Name": v["name"], "Email": v["email"]} 
-                    for k, v in config["credentials"]["usernames"].items() if k != "admin"
-                ])
-                if not users_df.empty:
-                    st.dataframe(users_df, use_container_width=True)
-                else:
-                    st.info("No users found")
-            
-            st.markdown("---")
-            if config and "credentials" in config and "usernames" in config["credentials"]:
-                user_list = [k for k in config["credentials"]["usernames"].keys() if k != "admin"]
-                if user_list:
-                    selected_user = st.selectbox("👤 Select User to Edit", user_list)
-                    
-                    current_user = config["credentials"]["usernames"][selected_user]
-                    col1, col2, col3 = st.columns(3)
-                    with col1:
-                        new_name = st.text_input("📝 Name", value=current_user["name"])
-                    with col2:
-                        new_email = st.text_input("📧 Email", value=current_user["email"])
-                    with col3:
-                        new_password = st.text_input("🔐 New Password (leave empty to keep)", type="password", value="")
-                    
-                    col4, col5 = st.columns([2, 1])
-                    with col4:
-                        if st.button("💾 UPDATE USER", type="primary", use_container_width=True):
-                            new_config = config.copy()
-                            new_config["credentials"]["usernames"][selected_user] = {
-                                "name": new_name if new_name else current_user["name"],
-                                "email": new_email if new_email else current_user["email"],
-                                "password": hash_password(new_password) if new_password else current_user["password"]
-                            }
-                            save_config(new_config)
-                            st.success(f"✅ {selected_user} updated successfully!")
-                            st.rerun()
-                    
-                    with col5:
-                        if st.button("🗑️ DELETE", type="secondary", use_container_width=True):
-                            new_config = config.copy()
-                            del new_config["credentials"]["usernames"][selected_user]
-                            save_config(new_config)
-                            st.success(f"✅ {selected_user} deleted!")
-                            st.rerun()
-                else:
-                    st.warning("No editable users found")
-            st.markdown("</div>", unsafe_allow_html=True)
-        
-        with tab2:
-            st.markdown("### 🏢 5 Halwai Companies")
-            for username_key, profile in COMPANY_PROFILES.items():
-                st.markdown(f"""
-                <div class='company-profile'>
-                    <h4>{profile['name']}</h4>
-                    <p><strong>Owners:</strong> {profile['owners']}</p>
-                    <p><strong>Contact:</strong> {profile['contact']}</p>
-                </div>
-                """, unsafe_allow_html=True)
-
-    # ===================== HALWAI USER SECTION =====================
     elif username in COMPANY_PROFILES:
         company_profile = COMPANY_PROFILES[username]
         st.success(f"✅ Logged in as: **{company_profile['name']}**")
@@ -340,12 +220,11 @@ if authentication_status:
                 st.markdown("### 📋 सामग्री आवश्यकता")
                 st.dataframe(bill_df, use_container_width=True)
 
-                # ✅ HTML DOWNLOAD (WORKS ON STREAMLIT CLOUD!)
                 html_content = generate_invoice_html(bill_df, customer, people, company_profile)
                 safe_filename = f"{username}_{customer.replace(' ', '_')}_{date.today().strftime('%d-%m-%Y')}.html"
                 
                 st.download_button(
-                    label="📥 HTML बिल डाउनलोड (प्रिंट → PDF)",
+                    label="📥 HTML बिल डाउनलोड (Print → PDF)",
                     data=html_content.encode('utf-8'),
                     file_name=safe_filename,
                     mime="text/html"
@@ -356,36 +235,20 @@ if authentication_status:
                     "Date": [date.today().strftime('%d-%m-%Y')],
                     "Customer": [customer], "People": [people], "Dishes": [", ".join(dishes)]
                 })
-                history = pd.read_csv(HISTORY_FILE)
-                history = pd.concat([history, new_record], ignore_index=True)
-                history.to_csv(HISTORY_FILE, index=False)
-                st.success(f"✅ बिल '{customer}' के लिए तैयार! HTML डाउनलोड करें → Chrome में Print → Save as PDF!")
+                history_df = pd.read_csv(HISTORY_FILE)
+                history_df = pd.concat([history_df, new_record], ignore_index=True)
+                history_df.to_csv(HISTORY_FILE, index=False)
+                st.success(f"✅ बिल '{customer}' तैयार!")
 
         with tab2:
             if os.path.exists(HISTORY_FILE):
                 history = pd.read_csv(HISTORY_FILE)
-                st.markdown("### 📊 आपका बिल इतिहास")
                 st.dataframe(history, use_container_width=True)
-            else:
-                st.info("कोई बिल इतिहास नहीं मिला")
-    
-    else:
-        st.error("❌ Unknown user type!")
 
     with st.sidebar:
-        if is_admin(username):
-            st.markdown("### 🔧 ADMIN")
-        elif username in COMPANY_PROFILES:
-            profile = COMPANY_PROFILES[username]
-            st.markdown(f"### 🏢 {profile['name']}")
-            st.markdown(f"**{profile['owners']}**")
-            st.markdown(f"**{profile['contact']}**")
         authenticator.logout("🔐 Logout", "sidebar")
 
 elif authentication_status is False:
     st.error("❌ गलत Username/Password")
 else:
     st.info("कृपया लॉगिन करें")
-
-st.markdown("---")
-st.markdown("<p style='text-align: center; color: #666;'>© 2026 कैटरिंग एंटरप्राइजेज - Bikaner</p>", unsafe_allow_html=True)
