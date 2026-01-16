@@ -1,11 +1,8 @@
 import streamlit as st
-import streamlit_authenticator as stauth
 import pandas as pd
-import yaml
 import os
 from datetime import date, timedelta
 import json
-from streamlit_authenticator.utilities.hasher import Hasher
 
 st.set_page_config(page_title="👑 रामलाल हलवाई कैटरिंग", layout="wide")
 
@@ -59,8 +56,7 @@ COMPANY_BOM = {
     }
 }
 
-# ===================== DATA FILES =====================
-@st.cache_data
+# ===================== FIXED DATA LOADING - NO CACHE =====================
 def load_data():
     os.makedirs("data", exist_ok=True)
     SUB_FILE = "data/subscriptions.json"
@@ -80,7 +76,7 @@ def save_data(data):
     with open("data/subscriptions.json", 'w') as f:
         json.dump(data, f)
 
-# ===================== MAIN APP =====================
+# Load fresh data every time
 subscriptions = load_data()
 
 # Session state
@@ -88,8 +84,6 @@ if "admin_logged_in" not in st.session_state:
     st.session_state.admin_logged_in = False
 if "company_logged_in" not in st.session_state:
     st.session_state.company_logged_in = None
-if "login_complete" not in st.session_state:
-    st.session_state.login_complete = False
 
 # ===================== LOGIN SCREEN =====================
 if not st.session_state.admin_logged_in and not st.session_state.company_logged_in:
@@ -99,48 +93,42 @@ if not st.session_state.admin_logged_in and not st.session_state.company_logged_
     
     with admin_tab:
         st.markdown("<div class='admin-panel'>", unsafe_allow_html=True)
-        st.markdown("### 🔥 **Admin Credentials**")
-        st.info("👤 **Username:** `admin`")
-        st.info("🔑 **Password:** `admin123`")
+        st.markdown("### 🔥 **Admin: admin / admin123**")
         
         col1, col2 = st.columns(2)
         with col1:
-            admin_user = st.text_input("Admin Username", placeholder="admin")
+            admin_user = st.text_input("Username", placeholder="admin")
         with col2:
-            admin_pass = st.text_input("Admin Password", type="password", placeholder="admin123")
+            admin_pass = st.text_input("Password", type="password", placeholder="admin123")
         
         if st.button("🔐 Admin Login", type="primary", use_container_width=True):
             if admin_user == "admin" and admin_pass == "admin123":
                 st.session_state.admin_logged_in = True
-                st.session_state.login_complete = True
-                st.success("✅ Admin Login Successful! 👑")
                 st.rerun()
             else:
-                st.error("❌ गलत Credentials! admin/admin123")
+                st.error("❌ admin/admin123")
         st.markdown("</div>", unsafe_allow_html=True)
     
     with company_tab:
-        st.markdown("### 🔥 **Company Login**")
-        st.info("🔑 **Password:** `company123` (All companies)")
+        st.markdown("### 🔥 **Company: company123**")
         
         col1, col2 = st.columns(2)
         with col1:
             company_list = ["ramlal_halwai", "bhanwarlal_halwai", "motilal_sweet"]
             selected_company = st.selectbox("🏢 Company", company_list, index=0)
-            st.info(f"**Status:** {'✅ Active' if subscriptions[selected_company]['active'] and date.fromisoformat(subscriptions[selected_company]['expiry']) > date.today() else '❌ Expired'}")
+            status = "✅ Active" if subscriptions[selected_company]["active"] and date.fromisoformat(subscriptions[selected_company]["expiry"]) > date.today() else "❌ Expired"
+            st.info(f"**Status:** {status}")
         with col2:
             password = st.text_input("🔑 Password", type="password", placeholder="company123")
         
         if st.button("🏢 Company Login", type="primary", use_container_width=True):
             if password == "company123":
                 st.session_state.company_logged_in = selected_company
-                st.session_state.login_complete = True
-                st.success(f"✅ {COMPANY_BOM[selected_company]['name']} Login!")
                 st.rerun()
             else:
-                st.error("❌ Password: **company123**")
+                st.error("❌ company123")
 
-# ===================== ADMIN DASHBOARD =====================
+# ===================== ADMIN DASHBOARD - FIXED RENEWAL =====================
 elif st.session_state.admin_logged_in:
     st.markdown(f"""
     <div class='enterprise-card'>
@@ -148,9 +136,10 @@ elif st.session_state.admin_logged_in:
     </div>
     """, unsafe_allow_html=True)
     
-    tab1, tab2 = st.tabs(["💳 Subscriptions", "🔐 Users"])
+    tab1, tab2 = st.tabs(["💳 Subscriptions", "🔐 Manage"])
     
     with tab1:
+        # ✅ FRESH DATAFRAME - Updates instantly after renewal
         sub_df = pd.DataFrame([
             {
                 "Company": COMPANY_BOM[c]["name"],
@@ -161,32 +150,47 @@ elif st.session_state.admin_logged_in:
             }
             for c, sub in subscriptions.items() if c in COMPANY_BOM
         ])
-        st.dataframe(sub_df, use_container_width=True)
+        st.dataframe(sub_df, use_container_width=True, hide_index=True)
         
+        # ✅ RENEWAL FORM
         col1, col2 = st.columns(2)
         with col1:
-            company_to_extend = st.selectbox("Extend", list(subscriptions.keys()))
+            company_to_extend = st.selectbox("🔄 Renew Company", list(subscriptions.keys()))
         with col2:
-            days = st.number_input("Days", 1, 365, 30)
+            days = st.number_input("Days", 1, 365, 30, key="admin_days")
         
-        if st.button("💰 Renew (₹5000)", type="primary"):
+        if st.button("💰 RENEW (₹5000)", type="primary", use_container_width=True):
+            old_status = "✅ Active" if subscriptions[company_to_extend]["active"] and date.fromisoformat(subscriptions[company_to_extend]["expiry"]) > date.today() else "❌ Expired"
+            
+            # Update subscription
             subscriptions[company_to_extend]["expiry"] = (date.today() + timedelta(days=days)).isoformat()
             subscriptions[company_to_extend]["active"] = True
             subscriptions[company_to_extend]["paid"] += 5000
             save_data(subscriptions)
-            st.success(f"✅ {COMPANY_BOM[company_to_extend]['name']} Renewed!")
+            
+            new_status = "✅ Active" if subscriptions[company_to_extend]["active"] and date.fromisoformat(subscriptions[company_to_extend]["expiry"]) > date.today() else "❌ Expired"
+            
+            st.success(f"✅ **{COMPANY_BOM[company_to_extend]['name']}**")
+            st.success(f"   {old_status} → {new_status}")
+            st.success(f"   New expiry: {subscriptions[company_to_extend]['expiry']}")
+            st.balloons()
             st.rerun()
     
     with tab2:
-        st.success("✅ All companies: **company123**")
-        if st.button("🔄 Reset All Data", type="secondary"):
-            os.remove("data/subscriptions.json")
-            st.success("✅ Data Reset!")
-            st.rerun()
-    
-    st.button("🔐 Logout", on_click=lambda: [setattr(st.session_state, k, False) for k in ["admin_logged_in", "company_logged_in", "login_complete"]]+[st.rerun()])
+        st.success("✅ **Company Password:** company123")
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("🔄 Reset All Data", type="secondary"):
+                os.remove("data/subscriptions.json") if os.path.exists("data/subscriptions.json") else None
+                st.success("✅ Reset!")
+                st.rerun()
+        with col2:
+            if st.button("🔐 Logout", type="secondary"):
+                for key in ["admin_logged_in", "company_logged_in"]:
+                    st.session_state[key] = False
+                st.rerun()
 
-# ===================== COMPANY DASHBOARD - NOW WORKS! =====================
+# ===================== COMPANY DASHBOARD =====================
 else:  # Company logged in
     company = st.session_state.company_logged_in
     company_data = COMPANY_BOM[company]
@@ -195,14 +199,12 @@ else:  # Company logged in
     is_active = sub_data["active"] and date.fromisoformat(sub_data["expiry"]) > date.today()
     days_left = max(0, (date.fromisoformat(sub_data["expiry"]) - date.today()).days)
     
-    # 🎉 COMPANY DASHBOARD STARTS HERE - NO MORE st.stop() BLOCKING!
     st.markdown(f"""
     <div class='enterprise-card'>
         <h1 class='title-gold'>स्वागत है {company_data['name']}! 👑</h1>
     </div>
     """, unsafe_allow_html=True)
     
-    # Status
     if is_active:
         st.markdown(f"""
         <div class='company-card'>
@@ -214,11 +216,9 @@ else:  # Company logged in
         st.markdown(f"""
         <div class='expired enterprise-card'>
             <h2>❌ SUBSCRIPTION EXPIRED</h2>
-            <p>Expired: {sub_data['expiry']}</p>
         </div>
         """, unsafe_allow_html=True)
     
-    # RENEWAL BUTTON (only if expired)
     if not is_active:
         if st.button("🔄 RENEW NOW (₹5000/30 days)", type="primary", use_container_width=True):
             subscriptions[company]["expiry"] = (date.today() + timedelta(days=30)).isoformat()
@@ -230,8 +230,7 @@ else:  # Company logged in
             st.rerun()
         st.stop()
     
-    # 🎊 BILL GENERATION - MAIN FEATURE
-    st.markdown("## 💰 बिल जेनरेट करें")
+    # Bill generation
     tab1, tab2 = st.tabs(["💰 नया बिल", "📊 बिल इतिहास"])
     
     with tab1:
@@ -284,13 +283,16 @@ else:  # Company logged in
             </body></html>
             """
             st.download_button(
-                "📥 बिल डाउनलोड (Print → PDF)",
+                "📥 बिल डाउनलोड",
                 html_content.encode('utf-8'),
                 f"{company}_{customer}_{date.today()}.html",
                 "text/html"
             )
     
-    st.button("🔐 Logout", on_click=lambda: [setattr(st.session_state, k, False) for k in ["company_logged_in", "login_complete"]]+[st.rerun()])
+    if st.button("🔐 Logout"):
+        for key in ["company_logged_in"]:
+            st.session_state[key] = None
+        st.rerun()
 
 st.markdown("---")
 st.markdown("<p style='text-align: center; color: #666;'>© 2026 रामलाल हलवाई एंटरप्राइजेज - Bikaner</p>", unsafe_allow_html=True)
